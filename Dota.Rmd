@@ -1,0 +1,273 @@
+---
+title: "Dota"
+output: pdf_document
+---
+<Data Preprocessing/Feature Engineering>
+
+```{r}                                                                                
+# import training data
+train1 <- read.csv("/Users/su.min.park@ibm.com/Documents/Dota/train1.csv")
+train9 <- read.csv("/Users/su.min.park@ibm.com/Documents/Dota/train9.csv")
+# expore structure
+str(train1)
+# combine train 1 and train 9 
+train <- rbind(train1, train9)
+# drop unncessary columns
+train <- train[,-1]
+train <- train[,-2]
+```
+
+```{r}
+# Combine Hero Data with Train
+hero <- read.csv("/Users/su.min.park@ibm.com/Documents/Dota/hero_data.csv")
+train_hero <- merge(train, hero, by = "hero_id")
+str(train_hero)
+# drop Roles
+train_hero <- train_hero[,-7]
+str(train_hero)
+```
+
+```{r}
+#load library
+library(dummies)
+#create a dummy data frame
+th <- dummy.data.frame(train_hero, names = c("primary_attr", "attack_type"))
+```
+
+PCA (unsupervised learning)
+
+```{r}
+# drop response variable
+th <- subset(th, select= -c(hero_id, kda_ratio))
+colnames(th)
+# drop 
+# divide the new data into train-train and train-test
+pca.train <- th[1:nrow(train9),]
+pca.test <- th[-(1:nrow(train9)),]
+# normalize all variables to have sd of 1 
+which(apply(pca.train, 2, var)==0)
+pca.train <- pca.train[ , apply(pca.train, 2, var) != 0]
+colnames(pca.train)
+prin_comp <- prcomp(pca.train, scale. = T)
+names(prin_comp)
+prin_comp$center
+prin_comp$scale
+prin_comp$rotation[1:5, 1:4]
+dim(prin_comp$x)
+# plot the resultant principal components
+biplot(prin_comp, scale = 0)
+
+#compute standard deviation of each principal component
+std_dev <- prin_comp$sdev
+#compute variance
+pr_var <- std_dev^2
+prop_varex <- pr_var/sum(pr_var)
+#cumulative scree plot
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+# we can choose 10 Principal Components as it still explains 90% of the data set.
+```
+
+Predictive Modeling with PCA 
+
+```{r}
+train_hero_train <- train_hero[1:nrow(train9),]
+#add a training set with principal components
+train.data <- data.frame(kda_ratio = train_hero_train$kda_ratio, prin_comp$x)
+
+#we are interested in first 30 PCAs
+train.data <- train.data[,1:10]
+
+#run a decision tree
+install.packages("rpart")
+library(rpart)
+rpart.model <- rpart(kda_ratio ~ .,data = train.data, method = "anova")
+rpart.model
+
+#transform test into PCA
+test.data <- predict(prin_comp, newdata = pca.test)
+test.data <- as.data.frame(test.data)
+
+#select the first 30 components
+test.data <- test.data[,1:10]
+
+#make prediction on test data
+rpart.prediction <- predict(rpart.model, test.data)
+
+#For fun, finally check your score of leaderboard
+practice.sub <- data.frame(ID = train1$id, kda_ratio = rpart.prediction)
+write.csv(practice.sub, "pca.train.csv",row.names = F)
+```
+
+Now let's try this on the test1 data set. 
+
+```{r}
+test1 <- read.csv("/Users/su.min.park@ibm.com/Documents/Dota/test1.csv")
+test9 <- read.csv("/Users/su.min.park@ibm.com/Documents/Dota/test9.csv")
+test9 <- test9[,-5]
+test1$kda_ratio <- 1
+test <- rbind(test1, test9)
+# Combine Hero Data with Train
+hero <- read.csv("/Users/su.min.park@ibm.com/Documents/Dota/hero_data.csv")
+test_hero <- merge(test, hero, by = "hero_id")
+str(test_hero)
+test_hero <- test_hero[,-8]
+testh <- dummy.data.frame(test_hero, names = c("primary_attr", "attack_type"))
+# drop response variable
+testh <- subset(testh, select= -c(hero_id, user_id, id, kda_ratio))
+colnames(testh)
+# divide the new data into train-train and train-test
+pca.train <- testh[1:nrow(test9),]
+pca.test <- testh[-(1:nrow(test9)),]
+# normalize all variables to have sd of 1 
+which(apply(pca.train, 2, var)==0)
+pca.train <- pca.train[ , apply(pca.train, 2, var) != 0]
+colnames(pca.train)
+
+prin_comp <- prcomp(pca.train, scale. = T)
+names(prin_comp)
+prin_comp$center
+prin_comp$scale
+prin_comp$rotation[1:5, 1:4]
+dim(prin_comp$x)
+# plot the resultant principal components
+biplot(prin_comp, scale = 0)
+
+#compute standard deviation of each principal component
+std_dev <- prin_comp$sdev
+#compute variance
+pr_var <- std_dev^2
+prop_varex <- pr_var/sum(pr_var)
+#cumulative scree plot
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+# we can choose 10 Principal Components as it still explains 90% of the data set.
+```
+
+```{r}
+train_hero_train <- test_hero[1:nrow(test9),]
+#add a training set with principal components
+train.data <- data.frame(kda_ratio = train_hero_train$kda_ratio, prin_comp$x)
+
+#we are interested in first 10 PCAs
+train.data <- train.data[,1:10]
+
+#run a decision tree
+install.packages("rpart")
+library(rpart)
+rpart.model <- rpart(kda_ratio ~ .,data = train.data, method = "anova")
+rpart.model
+
+#transform test into PCA
+test.data <- predict(prin_comp, newdata = pca.test)
+test.data <- as.data.frame(test.data)
+
+#select the first 10 components
+test.data <- test.data[,1:10]
+
+#make prediction on test data
+rpart.prediction <- predict(rpart.model, test.data)
+
+#For fun, finally check your score of leaderboard
+final.sub <- data.frame(ID = test1$id, kda_ratio = rpart.prediction)
+write.csv(final.sub, "pca.train.csv",row.names = F)
+```
+
+PCA gave a RMSE of 1013. 
+
+Let's try PCR. 
+```{r}
+# combine hero with test 9 & combine hero with test 1 
+test_hero1 <- merge(test9, hero, by = "hero_id")
+test_hero2 <- merge(test1, hero, by = "hero_id")
+# drop unnecessary columns
+test_hero1 <- subset(test_hero1, select= -c(hero_id, user_id, id, roles))
+test_hero2 <- subset(test_hero2, select= -c(hero_id, user_id, id, roles))
+# make factor into dummies
+#load library
+library(dummies)
+#create a dummy data frame
+th1 <- dummy.data.frame(test_hero1, names = c("primary_attr", "attack_type"))
+th2 <- dummy.data.frame(test_hero2, names = c("primary_attr", "attack_type"))
+th1 <- subset(th1, select= -c(primary_attragi, primary_attrint, primary_attrstr, attack_typeMelee, attack_typeRanged, num_games, base_health, base_mana, base_mana_regen))
+th2 <- subset(th2, select= -c(primary_attragi, primary_attrint, primary_attrstr, attack_typeMelee, attack_typeRanged, num_games, base_health, base_mana, base_mana_regen))
+
+write.csv(th1, "th1.csv")
+write.csv(th2, "th2.csv")
+
+require(pls)
+set.seed (1000)
+pcr_model <- pcr(kda_ratio~., data = th1, scale = TRUE, validation = "CV")
+pcr_pred <- predict(pcr_model, th2, ncomp = 3)
+write.csv(pcr_pred, "pcr.pred.csv")
+```
+
+Including Cross-Validation lowered the RMSE to 971.
+
+Now let's try preprocessing the data with PCA then applying XGBoost. 
+```{r}
+# Applying PCA
+# install.packages('caret')
+library(caret)
+# install.packages('e1071')
+library(e1071)
+test_hero1 <- merge(test9, hero, by = "hero_id")
+test_hero2 <- merge(test1, hero, by = "hero_id")
+# drop unnecessary columns
+test_hero1 <- subset(test_hero1, select= -c(hero_id, user_id, id, roles, base_health, base_mana, base_mana_regen))
+test_hero2 <- subset(test_hero2, select= -c(hero_id, user_id, id, roles, base_health, base_mana, base_mana_regen))
+
+pca = preProcess(x = test_hero1[-2], method = 'pca', pcaComp = 2)
+test_hero1_p = predict(pca, test_hero1)
+test_hero2_p = predict(pca, test_hero2)
+```
+
+```{r}
+# Fitting XGBoost to the Training set
+# install.packages('xgboost')
+library(xgboost)
+write.csv(test_hero1_p, "test_hero1_p.csv")
+test_hero1_p <- read.csv("test_hero1_p.csv")
+test_hero1_p <- subset(test_hero1_p, select= -c(X, primary_attr, attack_type))
+test_hero2_p <- subset(test_hero2_p, select= -c(primary_attr, attack_type))
+classifier = xgboost(data = as.matrix(test_hero1_p[-3]), label = test_hero1_p$kda_ratio, nrounds = 10)
+
+# Predicting the Test set results
+# add an empty column
+test_hero2_p[,3] <- 1
+y_pred = predict(classifier, newdata = as.matrix(test_hero2_p[-3]))
+
+# Applying k-Fold Cross Validation
+# install.packages('caret')
+library(caret)
+folds = createFolds(test_hero1_p$kda_ratio, k = 10)
+cv = lapply(folds, function(x) {
+  training_fold = test_hero1_p[-x, ]
+  test_fold = test_hero1_p[x, ]
+  classifier = xgboost(data = as.matrix(test_hero1_p[-3]), label = test_hero1_p$kda_ratio, nrounds = 10)
+  y_pred = predict(classifier, newdata = as.matrix(test_fold[-3]))
+  cm = table(test_fold[, 3], y_pred)
+  accuracy = (cm[1,1] + cm[2,2]) / (cm[1,1] + cm[2,2] + cm[1,2] + cm[2,1])
+  return(accuracy)
+})
+accuracy = mean(as.numeric(cv))
+```
+
+RMSE reduced at interation # 10 
+
+```{r}
+library(mlr)
+library(xgboost)
+labels <- test_hero1_p$kda_ratio
+ts_label <- test_hero2_p$V3
+dtrain <- xgb.DMatrix(data=as.matrix(test_hero1_p), label=labels)
+dtest <- xgb.DMatrix(data=as.matrix(test_hero2_p), label=ts_label)
+
+xgb1 <- xgb.train(data=dtrain, nrounds=10, watchlist = list(val=dtest,train=dtrain), maximize = F, objective="reg:linear", eval_metric = "rmse")
+xbgpred <- predict(xgb1, dtest)
+write.csv(xbgpred, "xbgpred.csv")
+```
+
+For some reaosn this resulted in a much bigger RMSE of 3000. 
